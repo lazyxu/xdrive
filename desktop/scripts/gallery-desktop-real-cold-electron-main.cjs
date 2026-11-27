@@ -20,6 +20,30 @@ app.commandLine.appendSwitch('no-sandbox')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
+// Fail-closed error categories only. Raw Electron errors can contain private
+// URLs and file paths and must never be forwarded to CI summary or artifacts.
+function gallerySafeCpuFailure(error) {
+  const message = String(error?.message || error || '')
+  if (message.includes('real first-party Renderer V8 sampled CPU attribution unavailable'))
+    return 'first_party_sourcemap_unresolved'
+  if (message.includes('actual sampled V8 CPUProfile missing'))
+    return 'v8_sample_count_missing'
+  if (message.includes('invalid V8 CPUProfile') ||
+      message.includes('invalid actual V8 CPU sample'))
+    return 'v8_profile_invalid'
+  if (message.includes('invalid local Vite sourcemap JSON') ||
+      message.includes('invalid Vite sourcemap') ||
+      message.includes('sourcemap VLQ') ||
+      message.includes('sourcemap segment'))
+    return 'sourcemap_parse_invalid'
+  if (/Profiler\.|Debugger|Protocol error|not attached|target closed/i.test(message))
+    return 'devtools_protocol_error'
+  if (message.includes('timed out waiting for'))
+    return 'gallery_decode_timeout'
+  if (message.includes('sidebar diagnosis'))
+    return 'desktop_login_or_navigation'
+  return 'unclassified_test_error'
+}
 function nativeProcessMetrics(pid) {
   if (process.platform !== 'linux' || !Number.isSafeInteger(pid) || pid <= 0) return null
   try {
@@ -505,6 +529,10 @@ async function run(win) {
       try { await contentTracing.stopRecording(chromiumTracePath) } catch {}
     }
     if (chromiumTracePath) fs.rmSync(chromiumTracePath, { force: true })
+    if (process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1') {
+      console.log('GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE ' +
+        JSON.stringify({ reason: gallerySafeCpuFailure(error) }))
+    }
     console.error('GALLERY_REAL_DESKTOP_ELECTRON_ERROR ' + (error?.stack || String(error)))
     app.exit(1)
   }
