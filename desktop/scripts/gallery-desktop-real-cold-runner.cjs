@@ -86,6 +86,7 @@ async function fixture(sample, dir) {
 async function electronSample(sample, env) {
   let received = null
   let safeFailure = null
+  let safeShape = null
   const label = 'GALLERY_REAL_DESKTOP_ELECTRON_SAMPLE '
   const safeFailureLabel = 'GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE '
   // Entry lives at the REAL Desktop package root, so Electron app.getAppPath()
@@ -101,14 +102,35 @@ async function electronSample(sample, env) {
     if (pos >= 0) received = JSON.parse(line.slice(pos + label.length))
     const safePos = line.indexOf(safeFailureLabel)
     if (safePos >= 0) {
-      const reason = JSON.parse(line.slice(safePos + safeFailureLabel.length))?.reason
+      const diagnostic = JSON.parse(line.slice(safePos + safeFailureLabel.length))
+      const reason = diagnostic?.reason
       const accepted = new Set([
         'first_party_sourcemap_unresolved', 'v8_sample_count_missing',
-        'v8_profile_invalid', 'sourcemap_parse_invalid',
-        'devtools_protocol_error', 'gallery_decode_timeout',
-        'desktop_login_or_navigation', 'unclassified_test_error',
+        'v8_profile_invalid', 'v8_profile_clock_invalid',
+        'v8_call_tree_invalid', 'v8_sample_reference_invalid',
+        'sourcemap_parse_invalid', 'devtools_protocol_error',
+        'gallery_decode_timeout', 'desktop_login_or_navigation',
+        'unclassified_test_error',
       ])
       safeFailure = accepted.has(reason) ? reason : 'unclassified_test_error'
+      // Never forward any keys/data from raw CDP profiles or arbitrary errors.
+      // Only the exact numeric-only fields produced by gallerySafeV8Shape.
+      const shape = diagnostic?.profileShape
+      if (shape && typeof shape === 'object') {
+        safeShape = {}
+        for (const key of [
+          'nodeCount', 'sampleCount', 'intervalCount',
+          'duplicateNodeCount', 'missingSampleNodeCount',
+          'nonFiniteIntervalCount', 'negativeIntervalCount',
+          'longerThan120sIntervalCount', 'longestIntervalMs',
+        ]) {
+          if (typeof shape[key] === 'number' &&
+              Number.isFinite(shape[key]) && shape[key] >= 0) {
+            safeShape[key] = shape[key]
+          }
+        }
+        safeShape.clockValid = shape.clockValid === true
+      }
     }
   }, desktopRoot)
   try {
@@ -118,7 +140,8 @@ async function electronSample(sample, env) {
     assert(end.code === 0 && received?.realProductionDesktop,
       'real Electron did not produce a valid decoded 100k result: ' +
       JSON.stringify({ code: end.code, signal: end.signal || null,
-        safeReason: safeFailure || 'no_safe_reason_reported' }))
+        safeReason: safeFailure || 'no_safe_reason_reported',
+        safeProfileShape: safeShape }))
     return received
   } finally {
     await stop(proc)
