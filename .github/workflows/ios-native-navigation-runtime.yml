@@ -476,6 +476,68 @@ jobs:
             --output "$RUNNER_TEMP/native-navigation-results/diagnostics/app-process-crash-audit.json" \
             "$HOME/Library/Logs/DiagnosticReports" \
             "$sim_reports/CrashReporter" "$sim_reports/DiagnosticReports"
+      - name: Export actual unified Files XCUI screenshots
+        if: ${{ always() && matrix.source == 'candidate-gallery-files' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/native-navigation-results/Navigation.xcresult"
+          out="$RUNNER_TEMP/native-navigation-results/diagnostics/files-unified-screenshots"
+          test -d "$bundle"
+          # Only this one real XCTest run: exporting every Gallery video/frame
+          # from the bundle would exhaust the artifact budget.
+          ids=(
+            'XDriveIOSGalleryFilesSixSubpageUITests/testFilesUnifiedNativePresentationCapturesOneContinuousSequence()'
+            'XDriveIOSNavigationUITests/XDriveIOSGalleryFilesSixSubpageUITests/testFilesUnifiedNativePresentationCapturesOneContinuousSequence'
+            'XDriveIOSGalleryFilesSixSubpageUITests/testFilesUnifiedNativePresentationCapturesOneContinuousSequence'
+          )
+          exported=0
+          for test_id in "${ids[@]}"; do
+            rm -rf "$out"
+            mkdir -p "$out"
+            if xcrun xcresulttool export attachments \
+                --path "$bundle" --output-path "$out" --test-id "$test_id" \
+                >"$RUNNER_TEMP/files-unified-export.log" 2>&1 && \
+               test -s "$out/manifest.json"; then
+              exported=1
+              break
+            fi
+          done
+          if [[ "$exported" != 1 ]]; then
+            cat "$RUNNER_TEMP/files-unified-export.log" >&2
+            echo "Files screenshot XCTest attachments missing (not a pass)" >&2
+            exit 1
+          fi
+          python3 - "$out" <<'PY'
+          import json
+          import pathlib
+          import sys
+          out = pathlib.Path(sys.argv[1])
+          data = json.loads((out / "manifest.json").read_text())
+          attachments = [a for test in data for a in test.get("attachments", [])]
+          names = {a.get("suggestedHumanReadableName", "") for a in attachments}
+          required = {
+              "ios-files-native-01-browse-home",
+              "ios-files-native-02-recent",
+              "ios-files-native-03-favorites",
+              "ios-files-native-04-browse-return",
+              "ios-files-native-05-browse-more",
+              "ios-files-native-06-home-organizer",
+              "ios-files-native-07-cloud-no-session",
+              "ios-files-native-08-browse-restored",
+          }
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit("Missing actual Files snapshots: " + ", ".join(missing))
+          for attachment in attachments:
+              if attachment.get("suggestedHumanReadableName") not in required:
+                  continue
+              exported = attachment.get("exportedFileName", "")
+              if not exported or not (out / exported).is_file():
+                  raise SystemExit("Missing screenshot bytes for " + str(exported))
+          print("Verified 8 native XCTest screenshot attachments; "
+                "synthetic Owner / no Session only, not signed-device PWA parity")
+          PY
       - name: Upload runtime logs and crash evidence
         if: always()
         uses: actions/upload-artifact@v4
