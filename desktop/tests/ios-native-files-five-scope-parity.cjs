@@ -104,6 +104,12 @@ test('real Simulator smoke is triggered by Files/Gallery subroute edits, not onl
   assert.match(workflow, /candidate-gallery-files\)[\s\S]*?XDriveIOSGalleryFilesStabilityUITests/)
   assert.match(workflow, /candidate-mapkit\)[\s\S]*?XDriveIOSMapNavigationRuntimeUITests/)
   assert.match(workflow, /candidate-performance\)[\s\S]*?XDriveIOSPagePerformanceUITests/)
+  assert.match(workflow, /include:\s*\n\s*- source: candidate-clipboard-owner/)
+  if (workflow.includes('candidate-clipboard-owner')) {
+    assert.match(workflow,
+      /candidate-clipboard-owner\)[\s\S]*?XDriveIOSClipboardAuthenticatedUITests/,
+      'Clipboard Owner shard must execute native authenticated UI tests')
+  }
   assert.match(workflow, /--require-page-performance/)
   assert.match(workflow, /continue-on-error:.*matrix\.source == 'release-c83'/)
   // A no-token smoke only validates mounting/return and process survival;
