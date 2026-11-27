@@ -132,9 +132,13 @@ test('real Electron CPU probe failures are categorized without raw request paths
   const end = main.indexOf('function nativeProcessMetrics(pid) {',begin)
   assert.ok(begin > 0 && end > begin)
   const context = {}
-  vm.runInNewContext(main.slice(begin,end) + '\nthis.classify = gallerySafeCpuFailure',context)
+  vm.runInNewContext(main.slice(begin,end) +
+    '\nthis.classify = gallerySafeCpuFailure; this.shape = gallerySafeV8Shape',context)
   const cases = [
     ['actual sampled V8 CPUProfile missing','v8_sample_count_missing'],
+    ['invalid actual V8 CPU sample with private path','v8_sample_reference_invalid'],
+    ['invalid V8 CPUProfile call tree with private URL','v8_call_tree_invalid'],
+    ['invalid V8 CPUProfile duration','v8_profile_clock_invalid'],
     ['real first-party Renderer V8 sampled CPU attribution unavailable','first_party_sourcemap_unresolved'],
     ['Protocol error -32601: Profiler.stop; private-path?q=secret','devtools_protocol_error'],
     ['invalid local Vite sourcemap JSON: private-token','sourcemap_parse_invalid'],
@@ -149,6 +153,19 @@ test('real Electron CPU probe failures are categorized without raw request paths
     assert.equal(label.includes('bearer'),false)
   }
   const runner = fs.readFileSync(path.join(__dirname,'../scripts/gallery-desktop-real-cold-runner.cjs'),'utf8')
+  const shape = context.shape({
+    nodes: [{id:1},{id:1}], samples:[1,2],
+    timeDeltas:[1000,-1,Infinity], startTime:1, endTime:2,
+  })
+  assert.equal(shape.nodeCount,2)
+  assert.equal(shape.duplicateNodeCount,1)
+  assert.equal(shape.missingSampleNodeCount,1)
+  assert.equal(shape.intervalCount,3)
+  assert.equal(shape.nonFiniteIntervalCount,1)
+  assert.equal(shape.negativeIntervalCount,1)
+  assert.equal(shape.clockValid,true)
+  assert.equal(JSON.stringify(shape).includes('token'),false)
   assert.match(runner,/safeReason: safeFailure/)
+  assert.match(runner,/safeProfileShape: safeShape/)
   assert.match(runner,/GALLERY_REAL_DESKTOP_ELECTRON_SAFE_FAILURE/)
 })
