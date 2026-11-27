@@ -91,7 +91,7 @@ test('candidate-gallery-files must actually RUN all eighteen child tests in macO
 test('the real native child and no-session boundaries are exercised, not mock routes', () => {
   for (const id of [
     'native-ios-gallery-open-filters',
-    'native-ios-gallery-people',
+    'native-ios-unified-options-people',
     'native-ios-unified-photo-gallery',
     'native-ios-unified-gallery-show-map',
   ]) assert.ok(gallery.includes(id), id);

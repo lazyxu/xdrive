@@ -203,7 +203,7 @@ test('real 100k MapKit XCTest has bound MapView and exact numeric target PhotoKi
 test('native map CI supersedes only obsolete PR Simulator/65-photo audits; never cancels real 100k evidence', () => {
   assert.match(workflow, /group: native-ios-runtime-\$\{\{ github\.event\.pull_request\.number \|\| github\.run_id \}\}/)
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/)
-  assert.match(workflow, /runs-on: macos-15/)
+  assert.ok(workflow.includes("runs-on: ${{ matrix.source == 'candidate-ios26-files' && 'macos-26' || 'macos-15' }}"))
   // Explicit 100k PR labels and manually dispatched heavyweight runs retain
   // their independent, uncancelled evidence, even as ordinary PR SHAs move.
   assert.match(scale, /group: \$\{\{ \(\(github\.event_name == 'pull_request'[\s\S]*?ios-mapkit-p0-scale-\{0\}-small/)

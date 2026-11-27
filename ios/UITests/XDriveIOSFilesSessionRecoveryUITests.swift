@@ -403,6 +403,7 @@ final class XDriveIOSFilesSessionRecoveryUITests: XCTestCase {
     func testFavoritesShortcutNoSessionShowsReadOnlyNativeRecovery() {
         let app = launch()
         files(app)
+        expandFavoritesIfNeeded(app)
         openHomeShortcut("native-ios-files-open-favorites", app)
         expect("native-ios-files-favorites-error-page", app)
         XCTAssertFalse(element("native-ios-files-grid", app).exists)

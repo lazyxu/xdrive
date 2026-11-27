@@ -32,7 +32,7 @@ test('only a completed native modal dismissal can apply an exact Owner-scoped re
   assert.match(modal, /if gallerySource != destination \{ openGallery\(destination\) \}[\s\S]*?if wantedSearch \{ openPhotoSearchForCurrentScope\(\) \}/)
   assert.match(src, /private func openPhotoSearchForCurrentScope\(\) \{[\s\S]*?if login\.owner == nil \{[\s\S]*?requestUnifiedPhotoSearch = false[\s\S]*?showingLocalPhotoSearch = true[\s\S]*?\} else \{[\s\S]*?requestUnifiedPhotoSearch = true/)
   assert.doesNotMatch(modal, /if wantedSearch \{ requestUnifiedPhotoSearch = true \}/)
-  assert.match(modal, /NavigationStack \{[\s\S]*?XDriveIOSNativePhotoMapsScreen\([\s\S]*?VStack\(spacing: 0\) \{[\s\S]*?NavigationStack \{[\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)[\s\S]*?nativePhotosBottomBar\s*\}/)
+  assert.match(modal, /VStack\(spacing: 0\) \{\s*NavigationStack \{\s*XDriveIOSNativePhotoMapsScreen\([\s\S]*?\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)[\s\S]*?nativePhotosBottomBar\s*\}/)
 })
 
 test('signed-out PhotoKit gallery uses actual map and returns to Collections', () => {
