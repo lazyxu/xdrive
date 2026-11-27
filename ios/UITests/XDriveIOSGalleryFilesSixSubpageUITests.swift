@@ -360,6 +360,135 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
 
     // 7: Previously reproduced real Files More > Organizer discoverability
     // failure. Test the actual menu child, not only a source-order contract.
+    /// These images come from one continuously running native app on the
+    /// same Simulator. A synthetic Owner has NO bearer: collection/loading
+    /// and cloud-denial shots are never evidence of populated cloud parity.
+    /// xcresult attachments preserve actual screenshots for manual comparison.
+    private func attachFilesParityFrame(_ app: XCUIApplication, _ stage: String) {
+        XCTAssertEqual(app.state, .runningForeground, "Native app exited at " + stage)
+        let image = app.screenshot()
+        let attachment = XCTAttachment(screenshot: image)
+        attachment.name = "ios-files-native-" + stage
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("IOS_FILES_UNIFIED_SNAPSHOT stage=" + stage
+              + " auth=synthetic-no-session provenance=xctest-simulator")
+    }
+
+    func testFilesUnifiedNativePresentationCapturesOneContinuousSequence() {
+        let app = launch(syntheticOwner: true)
+        enterFilesBrowse(app)
+        assertVisibleContent(app, label: "Unified Browse Home")
+        attachFilesParityFrame(app, "01-browse-home")
+
+        for (stage, section) in [
+            ("02-recent", "recent"),
+            ("03-favorites", "favorites"),
+            ("04-browse-return", "browse")
+        ] {
+            tap("native-ios-files-section-" + section, app)
+            let selected = control("native-ios-files-section-" + section, app)
+            let expectation = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "已选择"),
+                object: selected
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
+            assertVisibleContent(app, label: stage)
+            attachFilesParityFrame(app, stage)
+        }
+
+        tap("native-ios-files-more-options", app)
+        XCTAssertTrue(control("native-ios-files-toolbar-organize-home", app)
+            .waitForExistence(timeout: 15), "Real native More menu lost organizer")
+        attachFilesParityFrame(app, "05-browse-more")
+        tap("native-ios-files-toolbar-organize-home", app)
+        let organizer = app.navigationBars["整理浏览首页"].firstMatch
+        XCTAssertTrue(organizer.waitForExistence(timeout: 15),
+                      "Browse organizer did not mount")
+        attachFilesParityFrame(app, "06-home-organizer")
+        let done = organizer.buttons["完成"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        print("IOS_NATIVE_NAV_TAP_START route=native-ios-files-home-organizer-done")
+        done.tap()
+        XCTAssertTrue(control("native-ios-files-home-list", app)
+            .waitForExistence(timeout: 15), "Dismissed organizer lost Browse Home")
+
+        // Actual server-free denial; do not invent a cloud list or Viewer.
+        let home = control("native-ios-files-home-list", app)
+        let cloud = control("native-ios-files-open-root-location", app)
+        for _ in 0..<10 {
+            if cloud.exists && cloud.isHittable { break }
+            home.swipeDown()
+        }
+        XCTAssertTrue(cloud.exists && cloud.isHittable, "Cloud location inaccessible")
+        tap("native-ios-files-open-root-location", app)
+        XCTAssertTrue(control("native-ios-files-error-page", app)
+            .waitForExistence(timeout: 15), "Cloud denial must be an actual native page")
+        XCTAssertFalse(control("native-ios-files-grid", app).exists,
+                       "Synthetic Owner cannot expose protected file thumbnails")
+        attachFilesParityFrame(app, "07-cloud-no-session")
+        tap("native-ios-files-error-return", app)
+        XCTAssertTrue(control("native-ios-files-home-list", app)
+            .waitForExistence(timeout: 15))
+        attachFilesParityFrame(app, "08-browse-restored")
+    }
+
+    /// Run only on a provisioned, signed physical iPhone with a real Owner
+    /// session and a real file in cloud root. CI does not opt into this test.
+    /// It fails if the real fixture is absent; it never counts a synthetic
+    /// no-session screenshot as a populated Files/list/grid/Viewer pass.
+    func testFilesSignedDevicePopulatedListGridAndViewerSnapshots() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["XDRIVE_FILES_SIGNED_DEVICE_CAPTURE"] == "1" else {
+            throw XCTSkip("Real signed iPhone Owner fixture not provisioned")
+        }
+        guard let idText = env["XDRIVE_FILES_FIXTURE_FILE_NODE_ID"],
+              let fileID = UInt64(idText), fileID > 0 else {
+            XCTFail("Set XDRIVE_FILES_FIXTURE_FILE_NODE_ID to a real cloud-root file ID")
+            return
+        }
+        let app = XCUIApplication()
+        app.launch()
+        tap("native-ios-tab-files", app)
+        XCTAssertTrue(control("native-ios-files-home-list", app)
+            .waitForExistence(timeout: 15), "Existing signed Owner must be logged in")
+        attachFilesParityFrame(app, "real-01-home")
+        tap("native-ios-files-open-root-location", app)
+        XCTAssertTrue(control("native-ios-files-folder-list", app)
+            .waitForExistence(timeout: 20), "Real cloud directory not mounted")
+        XCTAssertFalse(control("native-ios-files-error-page", app).exists,
+                       "Owner authentication failed")
+        let file = control("native-ios-files-file-" + String(fileID), app)
+        XCTAssertTrue(file.waitForExistence(timeout: 25),
+                      "Required real fixture file is not in verified cloud-root window")
+        attachFilesParityFrame(app, "real-02-list")
+
+        tap("native-ios-files-more-options", app)
+        let displayMenu = app.buttons["显示与排序"].firstMatch
+        XCTAssertTrue(displayMenu.waitForExistence(timeout: 15))
+        displayMenu.tap()
+        let gridOption = app.buttons["图标"].firstMatch
+        XCTAssertTrue(gridOption.waitForExistence(timeout: 15))
+        gridOption.tap()
+        XCTAssertTrue(control("native-ios-files-grid", app)
+            .waitForExistence(timeout: 15), "Browse grid did not render")
+        attachFilesParityFrame(app, "real-03-grid")
+
+        let gridFile = control("native-ios-files-file-" + String(fileID), app)
+        XCTAssertTrue(gridFile.waitForExistence(timeout: 15))
+        gridFile.tap()
+        let viewerDone = control("native-ios-files-viewer-done", app)
+        XCTAssertTrue(viewerDone.waitForExistence(timeout: 20),
+                      "Actual file Viewer did not mount")
+        XCTAssertTrue(control("native-ios-files-viewer-previous", app).exists)
+        XCTAssertTrue(control("native-ios-files-viewer-next", app).exists)
+        attachFilesParityFrame(app, "real-04-viewer")
+        viewerDone.tap()
+        XCTAssertTrue(gridFile.waitForExistence(timeout: 15),
+                      "Viewer did not return to original grid file")
+        attachFilesParityFrame(app, "real-05-grid-return")
+    }
+
     func testFilesMoreOrganizerGalleryReturnPreservesBrowseHome() {
         let app = launch()
         waitForRealH264RecordingPrelude()
