@@ -364,7 +364,10 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
     /// same Simulator. A synthetic Owner has NO bearer: collection/loading
     /// and cloud-denial shots are never evidence of populated cloud parity.
     /// xcresult attachments preserve actual screenshots for manual comparison.
-    private func attachFilesParityFrame(_ app: XCUIApplication, _ stage: String) {
+    private func attachFilesParityFrame(
+        _ app: XCUIApplication, _ stage: String,
+        auth: String = "synthetic-no-session"
+    ) {
         XCTAssertEqual(app.state, .runningForeground, "Native app exited at " + stage)
         let image = app.screenshot()
         let attachment = XCTAttachment(screenshot: image)
@@ -372,11 +375,12 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         print("IOS_FILES_UNIFIED_SNAPSHOT stage=" + stage
-              + " auth=synthetic-no-session provenance=xctest-simulator")
+              + " auth=" + auth + " provenance=actual-xctest-screenshot")
     }
 
     func testFilesUnifiedNativePresentationCapturesOneContinuousSequence() {
         let app = launch(syntheticOwner: true)
+        waitForRealH264RecordingPrelude()
         enterFilesBrowse(app)
         assertVisibleContent(app, label: "Unified Browse Home")
         attachFilesParityFrame(app, "01-browse-home")
@@ -452,7 +456,21 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         tap("native-ios-tab-files", app)
         XCTAssertTrue(control("native-ios-files-home-list", app)
             .waitForExistence(timeout: 15), "Existing signed Owner must be logged in")
-        attachFilesParityFrame(app, "real-01-home")
+        attachFilesParityFrame(app, "real-01-home", auth: "signed-owner")
+        for (stage, section) in [
+            ("real-02-recent", "recent"),
+            ("real-03-favorites", "favorites"),
+            ("real-04-browse-return", "browse")
+        ] {
+            tap("native-ios-files-section-" + section, app)
+            let selected = control("native-ios-files-section-" + section, app)
+            let expectation = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "已选择"),
+                object: selected
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 10), .completed)
+            attachFilesParityFrame(app, stage, auth: "signed-owner")
+        }
         tap("native-ios-files-open-root-location", app)
         XCTAssertTrue(control("native-ios-files-folder-list", app)
             .waitForExistence(timeout: 20), "Real cloud directory not mounted")
@@ -461,9 +479,10 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         let file = control("native-ios-files-file-" + String(fileID), app)
         XCTAssertTrue(file.waitForExistence(timeout: 25),
                       "Required real fixture file is not in verified cloud-root window")
-        attachFilesParityFrame(app, "real-02-list")
+        attachFilesParityFrame(app, "real-05-list", auth: "signed-owner")
 
         tap("native-ios-files-more-options", app)
+        attachFilesParityFrame(app, "real-06-more-menu", auth: "signed-owner")
         let displayMenu = app.buttons["显示与排序"].firstMatch
         XCTAssertTrue(displayMenu.waitForExistence(timeout: 15))
         displayMenu.tap()
@@ -472,7 +491,7 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
         gridOption.tap()
         XCTAssertTrue(control("native-ios-files-grid", app)
             .waitForExistence(timeout: 15), "Browse grid did not render")
-        attachFilesParityFrame(app, "real-03-grid")
+        attachFilesParityFrame(app, "real-07-grid", auth: "signed-owner")
 
         let gridFile = control("native-ios-files-file-" + String(fileID), app)
         XCTAssertTrue(gridFile.waitForExistence(timeout: 15))
@@ -482,11 +501,11 @@ final class XDriveIOSGalleryFilesSixSubpageUITests: XCTestCase {
                       "Actual file Viewer did not mount")
         XCTAssertTrue(control("native-ios-files-viewer-previous", app).exists)
         XCTAssertTrue(control("native-ios-files-viewer-next", app).exists)
-        attachFilesParityFrame(app, "real-04-viewer")
+        attachFilesParityFrame(app, "real-08-viewer", auth: "signed-owner")
         viewerDone.tap()
         XCTAssertTrue(gridFile.waitForExistence(timeout: 15),
                       "Viewer did not return to original grid file")
-        attachFilesParityFrame(app, "real-05-grid-return")
+        attachFilesParityFrame(app, "real-09-grid-return", auth: "signed-owner")
     }
 
     func testFilesMoreOrganizerGalleryReturnPreservesBrowseHome() {
