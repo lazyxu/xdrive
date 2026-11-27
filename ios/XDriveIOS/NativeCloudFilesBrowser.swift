@@ -2653,8 +2653,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     /// Server index groups remain outside this bounded 64–256 tile renderer.
     private func filesGrid(_ items: [XDriveIOSNativeFilesEntry]) -> some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
-            spacing: 10
+            columns: XDriveIOSNativeFilesUIStyle.gridColumns,
+            spacing: XDriveIOSNativeFilesUIStyle.gridSpacing
         ) {
             ForEach(items) { entry in
                 gridTile(entry)
@@ -2665,8 +2665,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     ))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, XDriveIOSNativeFilesUIStyle.gridHorizontalInset)
+        .padding(.vertical, XDriveIOSNativeFilesUIStyle.gridVerticalInset)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden)
         .accessibilityElement(children: .contain)
@@ -3021,12 +3021,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .accessibilityIdentifier("native-ios-files-multi-select")
                         Divider()
                     Menu {
-                    Picker("显示方式", selection: Binding(
+                    XDriveIOSNativeFilesViewModePicker(selection: Binding(
                         get: { viewMode }, set: { chooseFilesViewMode($0) }
-                    )) {
-                        Text("列表").tag("list")
-                        Text("图标").tag("grid")
-                    }
+                    ))
                     .accessibilityIdentifier("native-ios-files-view-mode")
                     Picker("排序", selection: $sort) {
                         Text("名称").tag("name")
@@ -5051,58 +5048,21 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
     }
 
+    /// Browse uses the same visual cells as Recent and Favorites. Only
+    /// Browse supplies selection state; Viewer/Owner admission remains local.
     private func gridLabel(_ entry: XDriveIOSNativeFilesEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ZStack(alignment: .topTrailing) {
-                XDriveIOSNativeFilesThumbnailTile(
-                    node: entry.node, login: login,
-                    height: 72, viewerActive: selectedFile != nil
-                )
-                if selecting {
-                    Image(systemName: selectedIDs.contains(entry.id)
-                          ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(Color.accentColor)
-                        .padding(6)
-                        .accessibilityHidden(true)
-                }
-            }
-            XDriveIOSNativeFilesUIStyle.tileName(entry.node.name)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-            HStack(spacing: 5) {
-                if !entry.node.isDirectory {
-                    XDriveIOSNativeFilesUIStyle.typeBadge(entry.node)
-                }
-                XDriveIOSNativeFilesUIStyle.metadata(
-                    XDriveIOSNativeFilesUIStyle.gridMetadata(entry.node, path: entry.path)
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(selecting
-            ? (selectedIDs.contains(entry.id) ? "已选中" : "未选中") : "")
+        XDriveIOSNativeFilesGridContent(
+            node: entry.node, path: entry.path, login: login,
+            viewerActive: selectedFile != nil,
+            selected: selecting ? selectedIDs.contains(entry.id) : nil
+        )
     }
 
     private func row(_ entry: XDriveIOSNativeFilesEntry) -> some View {
-        HStack(spacing: 12) {
-            XDriveIOSNativeFilesThumbnailTile(
-                node: entry.node, login: login,
-                height: 40, width: 40, viewerActive: selectedFile != nil
-            )
-            VStack(alignment: .leading, spacing: 3) {
-                XDriveIOSNativeFilesUIStyle.rowName(entry.node.name)
-                XDriveIOSNativeFilesUIStyle.metadata(
-                    XDriveIOSNativeFilesUIStyle.compactMetadata(entry.node, path: entry.path)
-                )
-            }
-            Spacer(minLength: 6)
-        }
-        .contentShape(Rectangle())
-        // Slightly taller than a bare minimum touch target: two-line long
-        // names remain readable in Dynamic Type and match PWA's row rhythm.
-        .frame(minHeight: XDriveIOSNativeFilesUIStyle.rowHeight)
+        XDriveIOSNativeFilesRowContent(
+            node: entry.node, path: entry.path, login: login,
+            viewerActive: selectedFile != nil
+        )
     }
 
     private func requestLocation(for entry: XDriveIOSNativeFilesEntry) {
