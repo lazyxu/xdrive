@@ -72,11 +72,13 @@ struct XDriveIOSNativeClipboardScreen: View {
                 }
                 Picker("发送范围", selection: $targetID) {
                     Text("当前 Owner 广播").tag("")
+                        .accessibilityIdentifier("native-ios-clipboard-broadcast-option")
                     ForEach(targetDevices) { device in
                         Text(device.name + " · " + device.platform).tag(device.device_id)
                     }
                 }
                 .pickerStyle(.menu)
+                .accessibilityIdentifier("native-ios-clipboard-target-picker")
                 .disabled(busy)
                 .onChange(of: targetID) { _ in
                     referenceKind = "text"

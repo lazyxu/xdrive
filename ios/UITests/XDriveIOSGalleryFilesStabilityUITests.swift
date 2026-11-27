@@ -6,7 +6,10 @@ import UIKit
 /// reads may show an error, but must not kill or replace a navigation shell.
 /// These are mount/return/crash checks, not proof of zero dropped frames.
 final class XDriveIOSGalleryFilesStabilityUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+    }
 
     /// CI starts a real simctl recorder after the XCTest "started" log line.
     /// Measured first decoded video frames appeared up to ~17 seconds late.

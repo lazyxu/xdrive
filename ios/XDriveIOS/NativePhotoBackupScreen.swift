@@ -649,6 +649,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
             Section("备份进度与任务") {
+                // Viewing Setup is safe even when destination verification fails.
+                // It never starts upload or grants backup authorization by itself.
+                if login.owner != nil {
+                    Button("查看备份设置向导") { page = .setup }
+                        .disabled(controller.busy || enablingAutomaticBackup)
+                        .accessibilityIdentifier("native-ios-backup-open-setup")
+                }
                 if let focused = controller.focusedSummary, focused.totalWindows > 0 {
                     Text("集中扫描：\(focused.completedWindows)/\(focused.totalWindows) 段，确认新增 \(focused.confirmedNew) 项")
                         .monospacedDigit()

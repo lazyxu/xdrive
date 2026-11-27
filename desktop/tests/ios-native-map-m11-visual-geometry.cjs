@@ -25,6 +25,7 @@ test('M11 native and Owner MapKit markers share identical verified cover, badge 
   assert.match(local, /PHImageManager\.default\(\)\.cancelImageRequest\(request\)/)
   // Preserve tested degraded-poster and final-rendition transitions.
   assert.match(local, /PHImageResultIsDegradedKey/)
+  assert.match(local, /self\.epoch == snapshot/)
   assert.match(local, /if !degraded \|\| failed \{/)
   assert.match(local, /XDriveIOSNativeMapMarkerVisualPolicy\.badgeText\(count: count\)/)
   assert.match(local, /isAccessibilityElement = !provisional/)
@@ -39,4 +40,16 @@ test('M11 exact layout assertions explicitly prohibit inconsistent photo pin num
   assert.match(layout, /badgeText\(count: Int\).*?\{/s)
   assert.doesNotMatch(local, /badge\.frame = CGRect/)
   assert.doesNotMatch(cloud, /badge\.frame = CGRect/)
+})
+
+test('MapKit iOS 18.5 toolbar overflow opens the real basemap control, not a fake AX success', () => {
+  const navigation = read('ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift')
+  assert.match(navigation, /let overflow = app\.navigationBars\.firstMatch\.buttons\["More"\]\.firstMatch/)
+  assert.match(navigation, /overflow\.tap\(\)/)
+  assert.match(navigation, /native-ios-local-map-basemap/)
+  assert.match(navigation, /byStyleLabel\.waitForExistence\(timeout: 6\)/)
+  assert.match(navigation, /revealedBasemap\.tap\(\)/)
+  assert.match(navigation, /standard\.tap\(\)/)
+  assert.match(navigation, /XCTAssertTrue\(map\.exists, "Switching actual basemap style destroyed MapKit"\)/)
+  assert.doesNotMatch(navigation, /XCTSkip\([^\n]*[Bb]asemap/)
 })

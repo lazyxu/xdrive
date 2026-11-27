@@ -1,0 +1,184 @@
+name: iOS Native Subpage AX CPU Memory Performance
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-native-subpage-performance.yml'
+      - 'ios/UITests/XDriveIOSNativeSubpagePerformanceUITests.swift'
+      # Xcode compiles the entire native UITest target, including Gallery/Files
+      # cross-route suites; source edits there must rerun this real performance gate.
+      - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
+      - 'ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift'
+      - 'ios/scripts/audit_native_subpage_perf.py'
+      - 'ios/scripts/test_audit_native_subpage_perf.py'
+      - 'ios/scripts/report_native_perf_triage.py'
+      - 'ios/scripts/test_report_native_perf_triage.py'
+      - 'ios/scripts/prepare-navigation-runtime-smoke.py'
+      - 'ios/XDriveIOS/NativeCloudFilesBrowser.swift'
+      - 'ios/XDriveIOS/NativeFilesManagementPanel.swift'
+      - 'ios/XDriveIOS/NativePhotoBackupScreen.swift'
+      - 'ios/XDriveIOS/NativeNotesScreen.swift'
+      - 'ios/XDriveIOS/NativeUnifiedPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoWallComponents.swift'
+      - 'ios/XDriveIOS/NativePhotoThumbnailCacheScreen.swift'
+      - 'ios/XDriveIOS/NativeTransfers.swift'
+      - 'ios/performance/native-seven-workloads.json'
+      - 'ios/performance/native-web-workflow-parity.json'
+      - 'ios/scripts/audit_native_web_workflow_parity.py'
+      - 'ios/scripts/test_audit_native_web_workflow_parity.py'
+      - 'ios/scripts/audit_native_seven_workloads.py'
+      - 'ios/scripts/test_audit_native_seven_workloads.py'
+      - 'ios/XDriveIOS/NativePhotosDashboard.swift'
+      - 'ios/XDriveIOS/NativePhotoTimelineBrowser.swift'
+      - 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'
+      - 'ios/XDriveIOS/NativeLocalPhotoMap.swift'
+      - 'ios/XDriveIOS/NativeClipboardScreen.swift'
+      - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
+      - 'ios/XDriveIOS/NativeFilesSavedSearches.swift'
+      - 'ios/XDriveIOS/NativeFilesOperationHistory.swift'
+      - 'ios/XDriveIOS/NativeFilesSearchLocation.swift'
+      - 'ios/XDriveIOS/NativeUnifiedPhotoWall.swift'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-subpage-perf-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  actual-native-subpage-metrics:
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Audit real route registrations and negative evidence tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > "$RUNNER_TEMP/ios-native-subpage-source-sha"
+          echo "XD_PERF_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          python3 -m py_compile ios/scripts/audit_native_subpage_perf.py ios/scripts/test_audit_native_subpage_perf.py ios/scripts/audit_native_resource_perf.py ios/scripts/test_audit_native_resource_perf.py
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_subpage_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_resource_perf.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_report_native_perf_triage.py' -v
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_seven_workloads.py' -v
+          python3 ios/scripts/audit_native_seven_workloads.py ios/performance/native-seven-workloads.json
+          python3 -m unittest discover -s ios/scripts -p 'test_audit_native_web_workflow_parity.py' -v
+          python3 ios/scripts/audit_native_web_workflow_parity.py ios/performance/native-web-workflow-parity.json
+      - name: Prepare production-native app with test-only no-Session route harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d /Applications/Xcode_16.4.app ]]; then
+            sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          python3 ios/scripts/prepare-navigation-runtime-smoke.py "$GITHUB_WORKSPACE"
+          bash ios/scripts/prepare-assets.sh
+          (cd ios && xcodegen generate --spec project.yml)
+      - name: Boot genuine iOS 18.5 iPhone Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          options=json.loads(subprocess.check_output(
+              ["xcrun","simctl","list","devices","available","-j"]))["devices"]
+          compatible=[d for runtime, devices in options.items() for d in devices
+                      if runtime.endswith("iOS-18-5") and d.get("isAvailable",True)
+                      and d.get("name","").startswith("iPhone")]
+          if not compatible: raise SystemExit("No iOS 18.5 iPhone Simulator")
+          d=next((x for x in compatible if x["name"]=="iPhone 16"), compatible[0])
+          with open(os.environ["GITHUB_ENV"],"a") as f:
+              f.write("SUBPAGE_SIM="+d["udid"]+"\n")
+          print("NATIVE_SUBPAGE_SIM",d["name"],d["udid"])
+          subprocess.run(["xcrun","simctl","boot",d["udid"]],check=True)
+          subprocess.run(["xcrun","simctl","bootstatus",d["udid"],"-b"],
+                         timeout=240,check=True)
+          PY
+      - name: Real 25-root and 50-child AX CPU peak memory n3 on one Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-subpage-perf"
+          xcodebuild test \
+            -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SUBPAGE_SIM" \
+            -derivedDataPath "$RUNNER_TEMP/native-subpage-perf/DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/native-subpage-perf/Subpage.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeResourcePerformanceUITests \
+            -only-testing:xDriveIOSNavigationUITests/XDriveIOSNativeSubpagePerformanceUITests \
+            2>&1 | tee "$RUNNER_TEMP/native-subpage-perf/xcodebuild.log"
+      - name: Require 25 root plus 50 child real app resource and return metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/native-subpage-perf"
+          xcrun xcresulttool get test-results summary --path "$out/Subpage.xcresult" > "$out/test-summary.json"
+          xcrun xcresulttool get test-results metrics --path "$out/Subpage.xcresult" > "$out/metrics.json"
+          mkdir -p "$out/metrics-csv"
+          xcrun xcresulttool export metrics --path "$out/Subpage.xcresult" --output-path "$out/metrics-csv"
+          python3 ios/scripts/audit_native_subpage_perf.py \
+            "$out/xcodebuild.log" "$out/metrics.json" "$out/subpage-summary.json"
+          # GitHub PR GITHUB_SHA may be a merge ref; record the exact checked-out
+          # source HEAD, not that synthetic merge SHA, for both audit reports.
+          GITHUB_SHA="$XD_PERF_SOURCE_SHA" python3 ios/scripts/audit_native_resource_perf.py \
+            "$out/xcodebuild.log" "$out/metrics.json" "$out/root-summary.json"
+          python3 ios/scripts/report_native_perf_triage.py \
+            "$out/root-summary.json" "$out/subpage-summary.json" "$out/perf-triage.json" \
+            "$out/xcodebuild.log"
+          test -s "$out/perf-triage.csv"
+          test -s "$out/subpage-summary.csv"
+          test -s "$out/root-summary.json"
+          test -s "$out/root-summary.csv"
+          python3 - "$out" <<'PY'
+          import json, os, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
+          child = json.loads((out / "subpage-summary.json").read_text())
+          root = json.loads((out / "root-summary.json").read_text())
+          sha = os.environ["XD_PERF_SOURCE_SHA"]
+          if (len(sha) != 40 or root["exact_commit"] != sha
+                  or child["source_commit"] != sha):
+              raise SystemExit("Root and subpage xcresult must match checked-out source SHA")
+          if not (root["route_count"] == 25
+                  and root["observed_invocations"] == 100
+                  and root["resource_routes_with_3_cpu_and_rss_samples"] == 24
+                  and root["cold_launch_routes_with_3_duration_samples"] == 1
+                  and root["retained_trials_per_route"] == 3
+                  and child["route_count"] == 50
+                  and child["recorded_test_invocations"] == 200
+                  and child["total_ax_samples"] == 150
+                  and child["total_return_samples"] == 150
+                  and child["retained_trials_per_route"] == 3):
+              raise SystemExit("Actual 25-root/50-child n3 performance suite incomplete")
+          print("IOS_NATIVE_PAGE_AND_SUBPAGE_COMPLETE roots=25 children=50"
+                " root_invocations=100 child_invocations=200"
+                " child_forward=150 child_return=150 source_sha=" + sha)
+          PY
+          printf '%s\n' "SOURCE_HEAD=$(git rev-parse HEAD)"
+      - name: Preserve original logs, app metrics and failed route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-subpage-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/native-subpage-perf/xcodebuild.log
+            ${{ runner.temp }}/native-subpage-perf/test-summary.json
+            ${{ runner.temp }}/native-subpage-perf/metrics.json
+            ${{ runner.temp }}/native-subpage-perf/metrics-csv/
+            ${{ runner.temp }}/native-subpage-perf/subpage-summary.json
+            ${{ runner.temp }}/native-subpage-perf/subpage-summary.csv
+            ${{ runner.temp }}/native-subpage-perf/perf-triage.json
+            ${{ runner.temp }}/native-subpage-perf/perf-triage.csv
+            ${{ runner.temp }}/native-subpage-perf/root-summary.json
+            ${{ runner.temp }}/native-subpage-perf/root-summary.csv
+            ${{ runner.temp }}/native-subpage-perf/Subpage.xcresult/
+            ${{ runner.temp }}/ios-native-subpage-source-sha
+          if-no-files-found: warn
+          retention-days: 7

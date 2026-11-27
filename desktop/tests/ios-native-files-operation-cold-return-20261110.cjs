@@ -83,13 +83,13 @@ test('11 native foreground return under operation-history sheet is exercised wit
   assert.match(ui, /XCUIDevice.shared.press\(\.home\)[\s\S]*?app.activate\(\)/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after operations foreground"\)/)
 })
-test('12 all 84 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
+test('12 all 102 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
   const a = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const names = [...a.matchAll(/func (test\w+)\(\)/g), ...ui.matchAll(/func (test\w+)\(\)/g)]
     .map(x => x[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(x => x[1]))
-  assert.equal(names.length, 84)
-  assert.equal(new Set(names).size, 84)
+  assert.equal(names.length, 102)
+  assert.equal(new Set(names).size, 102)
   assert.ok(names.includes('testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage'))
   assert.ok(names.includes('testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope'))
   assert.deepEqual(names.filter(n => !registered.has(n)), [])
@@ -148,4 +148,43 @@ test('16 real Simulator failure: offscreen Files Home operation entry is brought
   assert.match(repeated, /app\.wait\(for: \.runningForeground, timeout: 18\)/)
   assert.match(repeated, /XCTNSPredicateExpectation\(/)
   assert.doesNotMatch(history, /tap\("native-ios-files-open-operations", app: app\)/)
+})
+
+
+test('17 every real Gallery/Files route has one watcher and H264 recording is isolated', () => {
+  const wf = read('.github/workflows/ios-native-navigation-runtime.yml')
+  const video = read('ios/scripts/files_ui_transition_video.py')
+  const stability = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
+  const sixSubpage = read('ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift')
+  const methods = [...stability.matchAll(/func (test\w+)\(\)/g),
+                   ...ui.matchAll(/func (test\w+)\(\)/g),
+                   ...sixSubpage.matchAll(/func (test\w+)\(\)/g)].map(m => m[1])
+  const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(m => m[1]))
+  const targetBlock = video.slice(video.indexOf('TARGETS = frozenset({'),
+                                  video.indexOf('})', video.indexOf('TARGETS = frozenset({')))
+  const h264 = new Set([...targetBlock.matchAll(/"(test\w+)"/g)].map(m => m[1]))
+  assert.ok(methods.length >= 94, 'lost real native Gallery/Files coverage')
+  assert.equal(new Set(methods).size, methods.length, 'duplicate native XCTest route')
+  assert.ok(h264.size >= 18, 'lost genuine H264 source tests')
+  assert.deepEqual(methods.filter(n => !registered.has(n)), [],
+    'every real native route requires frame registration')
+  assert.deepEqual([...h264].filter(n => !methods.includes(n)), [],
+    'every real H264 target must be a genuine native XCTest')
+  assert.equal(methods.filter(n => registered.has(n) && !h264.has(n)).length,
+               methods.length - h264.size)
+  assert.match(watcher, /exclude_h264_targets = len\(sys\.argv\) == 5/)
+  assert.match(watcher, /from files_ui_transition_video import TARGETS as H264_TARGETS/)
+  assert.match(watcher, /TARGETS\.difference_update\(H264_TARGETS\)/)
+  assert.match(wf, /still_args\+=\(--exclude-h264-targets\)/)
+  assert.match(wf, /if \[\[ "\$\{\{ matrix\.source \}\}" != "release-c83" \]\]/)
+  assert.match(wf, /frame_watcher=\$!/)
+  assert.match(wf, /video_watcher=\$!/)
+  assert.match(wf, /trap cleanup_native_watchers EXIT/)
+  assert.doesNotMatch(wf, /!= "candidate-gallery-files" \]\]; then/)
+  const minClipGate = wf.match(/files_ui_transition_video\.py" audit[\s\S]*?--minimum (\d+)/)
+  assert.ok(minClipGate, 'real H264 audit must remain mandatory')
+  assert.ok(Number(minClipGate[1]) >= h264.size,
+    'real H264 audit must cover every actual XCUITest target')
+  assert.ok(wf.includes("timeout-minutes: ${{ (matrix.source == 'candidate-gallery-files' || matrix.source == 'candidate-navigation') && 100 || 60 }}"),
+    "Gallery/Files 88-suite must not use the former whole-job 60-minute timeout")
 })

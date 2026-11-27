@@ -1967,6 +1967,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .accessibilityIdentifier("native-ios-files-filter-strip")
                 .disabled(login.owner == nil)
             }
             if !hasVerifiedSearchOptionsForOwner && !searchOptions.loading {
@@ -2809,6 +2810,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("无法读取当前目录", systemImage: "exclamationmark.triangle")
                         .font(.headline)
                     Text(failure).font(.subheadline).foregroundStyle(.secondary)
+                    if isGlobalSearch {
+                        // Retain real search filters after a denied Server request.
+                        // Never render unverified Nodes or a synthetic Session.
+                        filesHeader
+                    }
                     HStack {
                         Button("重试当前页") { reload() }
                             .accessibilityIdentifier("native-ios-files-retry")
@@ -5395,6 +5401,11 @@ struct XDriveIOSNativeFilesBrowser: View {
 
     private func clearSearch() {
         submittedSearchRestoreQuery = nil
+        // The native searchable overlay can outlive its presentation
+        // binding on iOS 18/26 (including a denied search after tab return).
+        // Retire the real search presentation as well as its query state,
+        // exactly as keyboard submission does. No Owner or row is trusted.
+        dismissSearch()
         searchPresented = false
         guard !activeQuery.isEmpty || !queryDraft.isEmpty ||
               searchFilters.hasActiveFilters || searchReturnOffset != nil else { return }

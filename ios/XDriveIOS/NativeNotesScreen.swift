@@ -79,6 +79,8 @@ struct XDriveIOSNativeNotesScreen: View {
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("native-ios-notes-source-picker")
+            .accessibilityValue(source.title)
             .padding(.horizontal, 16)
             .padding(.top, 8)
             if let errorMessage {

@@ -16,7 +16,7 @@ from files_ui_transition_video import (
 
 class FilesUITransitionVideoTests(unittest.TestCase):
     def test_real_targets_are_distinct(self):
-        self.assertEqual(len(TARGETS), 56)
+        self.assertEqual(len(TARGETS), 62)
         self.assertTrue({
             "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
             "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
@@ -24,6 +24,16 @@ class FilesUITransitionVideoTests(unittest.TestCase):
             "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
             "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
             "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+        }.issubset(TARGETS))
+
+    def test_six_files_filter_video_routes_cannot_be_dropped(self):
+        self.assertTrue({
+            "testFilesSizeFilterHorizontalGalleryReturn",
+            "testFilesDateThenSizeFiltersKeepNoSessionGuard",
+            "testFilesSizeFilterAfterQuickRailReentry",
+            "testFilesSizeFilterAfterSavedSearchesDismiss",
+            "testFilesSizeFilterAfterCloudDenialReturn",
+            "testFilesSizeFilterAfterForegroundResume",
         }.issubset(TARGETS))
 
     def test_eight_existing_navigation_cases_now_require_real_video(self):

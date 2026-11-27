@@ -169,3 +169,20 @@ test('date jump is retired when the PhotoKit date index becomes stale', () => {
     'changing PhotoKit authorization must still dismiss a stale date sheet')
   assert.match(browser, /if visible \{\s*selectedYearKey = nil\s*selectedMonthKey = nil\s*exactDateTarget = nil/)
 })
+
+
+test('foreground date navigator remains presented but discards stale PhotoKit index', () => {
+  const phaseChange = browser.match(/\.onChange\(of: phase\) \{ state in([\s\S]*?)\n        \}\n    \}/)
+  assert.ok(phaseChange, 'Native date navigator scenePhase handler must exist')
+  const handler = phaseChange[1]
+  const suspended = handler.slice(0, handler.indexOf('guard showingDates else'))
+  assert.match(suspended, /if state != \.active \{[\s\S]*?model\.invalidate\(\)[\s\S]*?exactDateTarget = nil[\s\S]*?setMapDateScope\(nil\)[\s\S]*?return/)
+  assert.doesNotMatch(suspended, /showingDates\s*=\s*false/,
+    'Ordinary background transition must not dismiss an authorized date sheet')
+  assert.match(handler, /guard showingDates else \{ return \}[\s\S]*?let permission = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(handler, /guard permission == datesPermissionAtPresentation else \{[\s\S]*?showingDates = false[\s\S]*?model\.invalidate\(\)/,
+    'Changed Full/Limited/Denied PhotoKit authorization must dismiss the stale sheet')
+  assert.match(handler, /if permission == \.authorized \|\| permission == \.limited \{\s*model\.load\(mediaFilter: mediaFilter\)/)
+  assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?showingDates = false/)
+  assert.match(browser, /Button\("完成"\) \{ showingDates = false \}/)
+})

@@ -86,10 +86,18 @@ test('Gallery short landscape uses one safe-area row without remounting its acti
   assert.match(ui, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
   assert.match(ui, /GeometryReader \{ availableSpace in/);
   assert.match(ui, /availableSpace\.size\.width >= 680 &&[\s\S]*?availableSpace\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize/);
-  assert.match(ui, /if !galleryFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*galleryCompactBackupAction\s*\}/);
-  assert.match(ui, /else \{\s*galleryStatusRow\s*gallerySourceRow/);
+  const gallery = ui.slice(ui.indexOf('private var gallery: some View {'));
+  // The compact backup action stays in the same visible short row; the
+  // normal status/backup row appears only in the alternative height branch.
+  // The media wall is OUTSIDE both branches, preserving Gallery/Viewer state.
+  assert.match(gallery, /if !galleryFocused \{[\s\S]*?if availableSpace\.size\.width >= 680 &&[\s\S]*?availableSpace\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*if gallerySource == \.local \|\| gallerySource == \.albums \{\s*gallerySearchAction\s*\}\s*galleryCompactBackupAction\s*\}\s*\.frame\(minHeight: 48\)/);
+  assert.match(ui, /NavigationStack \{\s*gallery\s*\.navigationTitle\("图库"\)/);
+  assert.match(ui, /private var galleryCompactBackupAction: some View \{[\s\S]*?\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.match(ui, /\}\s*else \{\s*galleryStatusRow\s*gallerySourceRow/);
   assert.match(ui, /private var gallerySourceRow: some View \{[\s\S]*?ScrollView\(\.horizontal, showsIndicators: false\)/);
   assert.match(ui, /\.accessibilityValue\([\s\S]*?"自动备份已暂停，需核对收据"/);
-  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings"\)/);
+  assert.equal((ui.match(/\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/g) || []).length, 1);
+  assert.equal((ui.match(/\.accessibilityIdentifier\("native-ios-gallery-backup-settings"\)/g) || []).length, 1);
   assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
 });

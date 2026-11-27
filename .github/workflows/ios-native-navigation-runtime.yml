@@ -55,6 +55,9 @@ on:
       - 'ios/XDriveIOS/NativeUnifiedPhotoViewer.swift'
       - 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'
       - 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'
+      - 'ios/XDriveIOS/NativePhotoTimelineBrowser.swift'
+      - 'ios/XDriveIOS/NativePhotoTimelinePolicy.swift'
+      - 'ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift'
       - 'ios/XDriveIOS/NativeLocalContinuousGallery.swift'
       - 'ios/XDriveIOS/NativePhotoVideoSurface.swift'
       - 'ios/scripts/test_summarize_navigation_latency.py'
@@ -276,25 +279,40 @@ jobs:
             node --test "$GITHUB_WORKSPACE/desktop/tests/ios-native-files-ui-six-parity-20261114.cjs"
             node --test "$GITHUB_WORKSPACE/desktop/tests/ios-native-gallery-files-six-reentry-20261116.cjs"
           fi
-          # Keep a few frames from the LIVE failed route, not SpringBoard after
-          # xcodebuild exits. Never use AX queries from this observer.
-          if [[ "${{ matrix.source }}" != "release-c83" && "${{ matrix.source }}" != "candidate-gallery-files" ]]; then
+          # One runner, two non-overlapping evidence groups:
+          # 12 strict video XCUITests (H.264) and the remaining 76 routes
+          # (bounded tap/settled PNG diagnostics). The screenshot watcher
+          # explicitly excludes every video target so it does not disrupt
+          # H.264 frame timing, even on a busy macOS runner.
+          frame_watcher=""
+          video_watcher=""
+          cleanup_native_watchers() {
+            for watcher in "${video_watcher:-}" "${frame_watcher:-}"; do
+              if [[ -n "$watcher" ]]; then
+                kill -TERM "$watcher" >/dev/null 2>&1 || true
+                wait "$watcher" >/dev/null 2>&1 || true
+              fi
+            done
+          }
+          trap cleanup_native_watchers EXIT
+          if [[ "${{ matrix.source }}" != "release-c83" ]]; then
+            still_args=()
+            if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
+              still_args+=(--exclude-h264-targets)
+            fi
             python3 "$SMOKE_ROOT/ios/scripts/capture-navigation-smoke-frames.py" \
               "$SMOKE_SIM" \
               "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
-              "$RUNNER_TEMP/native-navigation-results/diagnostics/live-frames" &
+              "$RUNNER_TEMP/native-navigation-results/diagnostics/live-frames" \
+              "${still_args[@]}" &
             frame_watcher=$!
-            trap 'kill "$frame_watcher" >/dev/null 2>&1 || true' EXIT
           fi
-          # For Gallery-Files use real H.264 instead of slow serial screenshots.
-          # No fake test starts or tap markers. The watcher is always reaped.
           if [[ "${{ matrix.source }}" == "candidate-gallery-files" ]]; then
             python3 "$SMOKE_ROOT/ios/scripts/files_ui_transition_video.py" watch \
               "$SMOKE_SIM" \
               "$RUNNER_TEMP/native-navigation-results/xcodebuild.log" \
               "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" &
             video_watcher=$!
-            trap 'kill -TERM "$video_watcher" >/dev/null 2>&1 || true; wait "$video_watcher" >/dev/null 2>&1 || true' EXIT
           fi
           # Legacy release is only an informational baseline: it does not
           # contain new child content IDs, so run the compatible tab smoke.
@@ -459,11 +477,11 @@ jobs:
             brew install ffmpeg
           fi
           ffmpeg -version | sed -n '1p'
-          # Require genuine clips from all 56 named native Gallery/Files journeys.
+          # Require genuine clips from all 62 named native Gallery/Files journeys.
           python3 "$GITHUB_WORKSPACE/ios/scripts/files_ui_transition_video.py" audit \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video" \
             "$RUNNER_TEMP/native-navigation-results/diagnostics/files-ui-video-audit.json" \
-            --minimum 56
+            --minimum 62
       - name: Reject candidate xDriveIOS process crash reports
         if: ${{ always() && matrix.source != 'release-c83' }}
         shell: bash

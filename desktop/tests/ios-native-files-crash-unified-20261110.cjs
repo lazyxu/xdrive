@@ -40,7 +40,13 @@ test('Search Submit explicitly retires the native overlay without clearing commi
 
 test('Files root, Owner change and reset retire search presentation', () => {
   assert.ok((browser.match(/searchPresented = false/g) || []).length >= 4)
-  assert.match(browser, /private func clearSearch\(\) \{\s*submittedSearchRestoreQuery = nil\s*searchPresented = false/)
+  const start = browser.indexOf('private func clearSearch() {')
+  const end = browser.indexOf('\n    private func ', start + 1)
+  assert.ok(start >= 0 && end > start, 'clearSearch implementation missing')
+  // Require the native overlay to be explicitly dismissed and its binding
+  // retired before any early return or query reset; comments are immaterial.
+  const body = browser.slice(start, end).replace(/^\s*\/\/[^\n]*$/gm, '')
+  assert.match(body, /private func clearSearch\(\) \{\s*submittedSearchRestoreQuery = nil\s*dismissSearch\(\)\s*searchPresented = false\s*guard\b/)
 })
 
 test('all four protected shortcuts fail closed before mounting Recent/Favorites list', () => {

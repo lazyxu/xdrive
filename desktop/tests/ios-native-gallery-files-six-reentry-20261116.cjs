@@ -4,6 +4,7 @@ const fs = require("node:fs")
 const path = require("node:path")
 
 const root = path.resolve(__dirname, "../..")
+const read = name => fs.readFileSync(path.join(root, name), "utf8")
 const browser = fs.readFileSync(
   path.join(root, "ios/XDriveIOS/NativeCloudFilesBrowser.swift"), "utf8")
 const navigation = fs.readFileSync(
@@ -262,6 +263,17 @@ test("six more real native Gallery/Files cross-child transitions retain H264 fai
     "Files root search overlay retirement must remain protected")
   const workflow = fs.readFileSync(path.join(root,
     ".github/workflows/ios-native-navigation-runtime.yml"), "utf8")
-  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 56/,
-    "all 56 distinct real video clips must remain mandatory")
+  assert.match(workflow, /files_ui_transition_video\.py" audit[\s\S]*?--minimum 62/,
+    "all 62 distinct real video clips must remain mandatory")
+})
+
+test('six native Files date and size filters run as real XCTest and H264 targets', () => {
+  const native = read('ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift')
+  const recorder = read('ios/scripts/files_ui_transition_video.py')
+  const watcher = read('ios/scripts/capture-navigation-smoke-frames.py')
+  for (const name of ["testFilesSizeFilterHorizontalGalleryReturn","testFilesDateThenSizeFiltersKeepNoSessionGuard","testFilesSizeFilterAfterQuickRailReentry","testFilesSizeFilterAfterSavedSearchesDismiss","testFilesSizeFilterAfterCloudDenialReturn","testFilesSizeFilterAfterForegroundResume"]) {
+    assert.ok(native.includes('func ' + name + '()'), 'missing native XCTest ' + name)
+    assert.ok(recorder.includes('"' + name + '"'), 'missing genuine MP4 target ' + name)
+    assert.ok(watcher.includes('"' + name + '"'), 'missing native screenshot witness ' + name)
+  }
 })

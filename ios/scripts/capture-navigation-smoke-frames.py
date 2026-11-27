@@ -16,8 +16,15 @@ import subprocess
 import sys
 import time
 
-if len(sys.argv) != 4:
-    raise SystemExit("usage: capture-navigation-smoke-frames.py SIM LOG OUT_DIR")
+# The Gallery/Files shard runs this watcher for 76 non-video XCUITests.
+# Eighteen other journeys are captured by the dedicated strict H.264 recorder.
+# Never sample those H.264 cases with blocking simctl PNGs: concurrent screen
+# reads could disturb the very timing/flicker signal being audited.
+exclude_h264_targets = len(sys.argv) == 5 and sys.argv[4] == "--exclude-h264-targets"
+if len(sys.argv) not in (4, 5) or (len(sys.argv) == 5 and not exclude_h264_targets):
+    raise SystemExit(
+        "usage: capture-navigation-smoke-frames.py SIM LOG OUT_DIR [--exclude-h264-targets]"
+    )
 simulator, log_name, output_name = sys.argv[1:4]
 log = pathlib.Path(log_name)
 output = pathlib.Path(output_name)
@@ -116,6 +123,12 @@ TARGETS = {
     "testFilesRecentFavoritesBrowseRapidSwitchRetainsReadableRail",
     "testNoSessionCloudDenialReturnsToFilesAndGalleryWithoutBlankPage",
     "testGalleryPeopleChildBackThenFilesReturnRetainsVisualHierarchy",
+    "testFilesSizeFilterHorizontalGalleryReturn",
+    "testFilesDateThenSizeFiltersKeepNoSessionGuard",
+    "testFilesSizeFilterAfterQuickRailReentry",
+    "testFilesSizeFilterAfterSavedSearchesDismiss",
+    "testFilesSizeFilterAfterCloudDenialReturn",
+    "testFilesSizeFilterAfterForegroundResume",
 }
 NAV_TARGETS = {
     "testGalleryFourUnchangedForegroundCyclesPreserveWallAndPixels",
@@ -198,6 +211,31 @@ MINIMAL_TARGETS = {
     # by the same bounded Simulator frame observer after branch integration.
     "testUnifiedGalleryFilterMapOpensRealSharedMapAndReturnsWithoutBlank",
     "testUnifiedSourceFilterCannotClaimUnrepresentableMapMembership",
+    # Each new child route also has its own required H.264 video. Keep just
+    # a lightweight real first-tap/screenshot sample here to avoid competing
+    # with the dedicated video recorder's 10-Hz post-tap audit.
+    "testFilesSavedSearchesRepeatedDismissalAndGalleryRoundTrips",
+    "testFilesOperationHistoryThenSavedSearchesKeepsBothSheetsIndependent",
+    "testFilesCloudDenialThenQuickSectionsKeepNativeContent",
+    "testLocalPhotoTimelineSheetRepeatedAfterFilesReturns",
+    "testGalleryPeopleRepeatedBackAndFilesReentryKeepsContent",
+    "testGallerySourceFilterAndOriginalsRepeatedFilesReturn",
+    # Six additional real child-lifecycle XCTest routes from the current PR.
+    # Lightweight observer registration; the original 12 H.264 clips remain
+    # the strict video gate and these six are separately settled-frame gated.
+    "testSavedSearchesAfterFavoritesRecentThenGallery",
+    "testOperationHistoryForegroundFromRecentKeepsSheet",
+    "testCloudDenialSavedSearchesReturnDoesNotResurrectError",
+    "testGalleryPeopleRotationFilesGalleryKeepsPage",
+    "testOriginalsHelpFilesHistoryThenOriginals",
+    "testLocalPhotoDateSheetForegroundFilesThenLocal",
+    # Six independent Gallery/Files cross-route stress cases.
+    "testCloudTrashDenialsAlbumsOriginalsUnifiedAreReadable",
+    "testSavedSearchHistoryForegroundAfterReverseSheetSequence",
+    "testPeopleLocalPhotoKitFilesQuickSectionsPreserveLocalWall",
+    "testGalleryFilterCancelThenCloudDenialKeepsNoGhostSheet",
+    "testFilesHistoryRotationOriginalsForegroundPreservesChild",
+    "testLocalPhotoDateThenTrashDenialRestoresPhotoKit",
 }
 # Register all eighteen H264 Gallery/Files journeys with the bounded native
 # screenshot observer as well. Video and screenshots remain separate evidence.
@@ -311,6 +349,17 @@ TARGETS.update({
     "testFilesSearchKeyboardMineCacheReturnKeepsFiles",
     "testSavedSearchSheetRotationThenGalleryFilesReturnKeepsContent",
 })
+# The optional Gallery/Files mode needs the *exact* H.264 target
+# registry as its exclusion list, not another hand-maintained set. If the
+# strict recorder adds targets without this watcher knowing, fail closed.
+if exclude_h264_targets:
+    from files_ui_transition_video import TARGETS as H264_TARGETS
+    if not H264_TARGETS.issubset(TARGETS):
+        raise SystemExit("Gallery/Files video targets missing from screenshot registry")
+    TARGETS.difference_update(H264_TARGETS)
+    NAV_TARGETS.difference_update(H264_TARGETS)
+    MINIMAL_TARGETS.difference_update(H264_TARGETS)
+
 tap_start = re.compile(r"IOS_NATIVE_NAV_TAP_START route=(native-ios-[a-z0-9-]+)")
 start = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' started\.")
 finish = re.compile(r"Test Case '-\[[^\]]+\s+(test\w+)\]' (?:passed|failed)\b")

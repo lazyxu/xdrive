@@ -129,6 +129,7 @@ func xdrivePhotoWallDensityButtons(
             Label(option.title, systemImage: density.wrappedValue == option
                 ? "checkmark.circle.fill" : "square.grid.3x3")
         }
+        .accessibilityIdentifier("native-ios-shared-density-" + option.rawValue)
     }
 }
 
