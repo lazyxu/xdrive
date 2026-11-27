@@ -9,8 +9,8 @@ const runtime = read('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
 const b9 = read('ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift')
 
 test('five selected child NavigationStacks each suppress their own system tab bar', () => {
-  const start = dashboard.indexOf('TabView(selection: $tab) {')
-  const end = dashboard.indexOf('.id(ownerScopeKey)', start)
+  const start = dashboard.indexOf('private var dashboardTabContent: some View {')
+  const end = dashboard.indexOf('// iOS 26 Photos-style', start)
   assert.ok(start >= 0 && end > start, 'real five-tab body must stay mounted')
   const body = dashboard.slice(start, end)
   const stacks = body.split('NavigationStack {').slice(1)

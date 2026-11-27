@@ -225,7 +225,7 @@ test('P0: one physically reserved native bottom bar and real direct Files Home e
   const shell = source('ios/XDriveIOS/NativePhotosDashboard.swift')
   const xctest = source('ios/UITests/XDriveIOSNavigationRuntimeUITests.swift')
   const crash = source('ios/UITests/XDriveIOSAllNativePagesCrashSweepUITests.swift')
-  assert.match(shell, /return VStack\(spacing: 0\) \{/)
+  assert.match(shell, /var body: some View \{\s*VStack\(spacing: 0\) \{/)
   assert.match(shell, /TabView\(selection: \$tab\)/)
   assert.match(shell, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/)
   assert.doesNotMatch(shell, /\.safeAreaInset\(edge: \.bottom, spacing: 0\)/)

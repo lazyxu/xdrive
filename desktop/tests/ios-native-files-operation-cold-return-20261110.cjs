@@ -83,13 +83,13 @@ test('11 native foreground return under operation-history sheet is exercised wit
   assert.match(ui, /XCUIDevice.shared.press\(\.home\)[\s\S]*?app.activate\(\)/)
   assert.match(ui, /assertVisiblePixels\(app, route: "Gallery after operations foreground"\)/)
 })
-test('12 all 90 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
+test('12 all 95 native Gallery/Files route tests are registered with Simulator screenshot observer', () => {
   const a = read('ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift')
   const names = [...a.matchAll(/func (test\w+)\(\)/g), ...ui.matchAll(/func (test\w+)\(\)/g)]
     .map(x => x[1])
   const registered = new Set([...watcher.matchAll(/"(test\w+)"/g)].map(x => x[1]))
-  assert.equal(names.length, 90)
-  assert.equal(new Set(names).size, 90)
+  assert.equal(names.length, 95)
+  assert.equal(new Set(names).size, 95)
   assert.ok(names.includes('testFilesOperationHistoryTwoForegroundGalleryReturnCyclesKeepRealPage'))
   assert.ok(names.includes('testSyntheticOwnerAlbumsFilesForegroundRelaunchDoesNotRetainOldScope'))
   assert.deepEqual(names.filter(n => !registered.has(n)), [])

@@ -21,7 +21,7 @@ test('five stable native bottom positions own the same feature-local TabView sta
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)/);
   // A dedicated VStack row must reserve physical space for the global bar.
   // A TabView.safeAreaInset previously let Files' own quick rail overlap it.
-  assert.match(ui, /return VStack\(spacing: 0\) \{/);
+  assert.match(ui, /var body: some View \{\s*VStack\(spacing: 0\) \{/);
   assert.match(ui, /TabView\(selection: \$tab\)/);
   assert.match(ui, /\.toolbar\(\.hidden, for: \.tabBar\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)/);
   assert.match(ui, /\.frame\(maxWidth: \.infinity, maxHeight: \.infinity\)\s*if XDriveIOSNativeFocusVisibilityPolicy\.showsBar\(/);
