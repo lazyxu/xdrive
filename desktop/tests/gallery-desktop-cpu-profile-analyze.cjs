@@ -83,6 +83,8 @@ test('sourcemap first-party function symbols are allowlisted, not arbitrary cred
   assert.equal(safeSymbol('dynamic-private-key','shared-gallery-page'),null)
   assert.equal(sourceFamily('../node_modules/react-dom/src/ReactFiberWorkLoop.js'),'react-runtime')
   assert.equal(sourceFamily('../../../ui/shared/src/mui/MediaGallery.tsx'),'shared-gallery-page')
+  assert.equal(sourceFamily('../../node_modules/@xdrive/ui/src/mui/MediaGallery.tsx'),'shared-gallery-page')
+  assert.equal(sourceFamily('../../node_modules/@xdrive/ui/src/gallery/VirtualCollection.ts'),'shared-gallery-support')
 })
 test('wrong/missing map is visible as unmapped and cannot fake current first-party attribution', t => {
   const {root,bundle,privateUrl,profile} = makeFixture(t)
@@ -95,6 +97,18 @@ test('wrong/missing map is visible as unmapped and cannot fake current first-par
   assert.equal(bundleName('https://example.com/file?token=abc'),null)
   assert.throws(()=>summariseCPUProfile({nodes:[],samples:[],timeDeltas:[]},root),/actual sampled/)
   assert.throws(()=>summariseCPUProfile({...profile,samples:Array(137).fill(999)},root),/invalid actual/)
+})
+test('genuine delayed V8 sampling is reported as unobserved gaps, not fake CPU', t => {
+  const {root,profile} = makeFixture(t)
+  profile.timeDeltas[0] = 4100000
+  profile.endTime += 4099000
+  const result = summariseCPUProfile(profile,root)
+  assert.equal(result.longGapSamples,1)
+  assert.equal(result.maxCreditedSampleIntervalMs,100)
+  assert.equal(result.unobservedLongGapMs,4000)
+  assert.equal(result.totalWeightedSampleMs,236)
+  assert.equal(result.firstPartySampleCount,125)
+  assert.equal(result.topMappedSymbols[0].mappedSymbol,'XDriveMediaGalleryPage')
 })
 test('existing production entry is reused, with fully opt-in raw-free debugger capture', () => {
   const main = fs.readFileSync(path.join(__dirname,'../scripts/gallery-desktop-real-cold-electron-main.cjs'),'utf8')
