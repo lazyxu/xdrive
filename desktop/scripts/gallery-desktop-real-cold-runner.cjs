@@ -126,6 +126,8 @@ async function oneSample(sample, ready, dir) {
     XD_GALLERY_DESKTOP_COLD_CHROME_TRACE:
       process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1' ? '1' : '0',
     XD_GALLERY_DESKTOP_TRACE_SCRATCH: dir,
+    XD_GALLERY_DESKTOP_COLD_CPU_PROFILE:
+      process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1' ? '1' : '0',
   }
   const proc = launch(agentBinary, [], { ...process.env, ...env }, 'agent-' + sample)
   const discovery = path.join(configHome, 'xdrive', 'desktop-ipc.json')
@@ -184,6 +186,16 @@ async function main() {
         assert(result.logicalItems === 100000 && result.physicalNodes === 115000 &&
           result.renderer.decodedImages >= 12 &&
           result.renderer.mountedTiles < 1000, 'real Desktop 100k result incorrect')
+        if (process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1') {
+          const cpu = result.cpuProfileSummary
+          assert(cpu?.sampleCount >= 100 &&
+            cpu.sourceMappedSampleFrames >= 1 &&
+            cpu.firstPartySampleCount >= 1 &&
+            cpu.rawProfileArgsPathsOrURLsIncluded === false &&
+            cpu.rawSourceMapsIncluded === false &&
+            cpu.productionLogicModified === false,
+            'actual Desktop CPU samples and private sourcemap attribution required')
+        }
         if (process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1') {
           const trace = result.chromiumTimeline
           assert(trace?.rendererPIDMatched && trace.rendererEvents > 0 &&
@@ -257,6 +269,7 @@ async function main() {
       samples, n: samples.length,
       progressProbeEnabled: probeEnabled,
       chromiumTraceProbeEnabled: process.env.XD_GALLERY_DESKTOP_COLD_CHROME_TRACE === '1',
+      cpuProfileProbeEnabled: process.env.XD_GALLERY_DESKTOP_COLD_CPU_PROFILE === '1',
       progressMedians,
       progressPairCount: probeEnabled ? samples.reduce(
         (sum, row) => sum + row.sourceExactMediaProgress.pairs.length, 0) : 0,
