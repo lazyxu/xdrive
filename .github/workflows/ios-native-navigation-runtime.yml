@@ -11,6 +11,7 @@ on:
       - 'ios/UITests/XDriveIOSGalleryFilesStabilityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesFrameContinuityUITests.swift'
       - 'ios/UITests/XDriveIOSGalleryFilesSixSubpageUITests.swift'
+      - 'ios/UITests/XDriveIOSFilesSignedParityUITests.swift'
       - 'ios/UITests/XDriveIOSFilesSessionRecoveryUITests.swift'
       - 'ios/UITests/XDriveIOSB9ReleaseCrashUITests.swift'
       - 'ios/UITests/XDriveIOSMapNavigationRuntimeUITests.swift'
