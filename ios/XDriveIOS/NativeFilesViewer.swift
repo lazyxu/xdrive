@@ -379,7 +379,11 @@ struct XDriveIOSNativeFilesViewer: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("完成") { close() }
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(
+                            minWidth: XDriveIOSNativeFilesUIStyle.tapHeight,
+                            minHeight: XDriveIOSNativeFilesUIStyle.tapHeight
+                        )
+                        .accessibilityIdentifier("native-ios-files-viewer-done")
                 }
                 // This remains reachable on short landscape layouts, including
                 // when the player stalls without emitting a terminal error.
@@ -442,7 +446,9 @@ struct XDriveIOSNativeFilesViewer: View {
                     } label: {
                         Label("上一项", systemImage: "chevron.left")
                     }
+                    .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
                     .disabled(neighborBusy || !mayNavigate(-1))
+                    .accessibilityIdentifier("native-ios-files-viewer-previous")
                     Spacer()
                     if authorized,
                        let index = XDriveIOSNativeFilesViewerPolicy.loadedIndex(
@@ -457,7 +463,9 @@ struct XDriveIOSNativeFilesViewer: View {
                     } label: {
                         Label("下一项", systemImage: "chevron.right")
                     }
+                    .frame(minHeight: XDriveIOSNativeFilesUIStyle.tapHeight)
                     .disabled(neighborBusy || !mayNavigate(1))
+                    .accessibilityIdentifier("native-ios-files-viewer-next")
                 }
             }
             // A video tap may hide its timeline and top chrome, but must
